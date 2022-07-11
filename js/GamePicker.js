@@ -1,5 +1,5 @@
 function callGetRandomGame(thing) {
-    fetch('http://www.davecloak.com/api/?test=' + thing)
+    fetch('http://davecloak.com/api/?test=' + thing)
         .then(res => res.text())
         .then(data => {
             var temp = data.split(",")
@@ -30,12 +30,12 @@ function populateCheckBox(gamesList) {
         input.addEventListener('change', function () {
             if (this.checked) {
                 var temp = 'changeT&game=' + this.value;
-                fetch('http://www.davecloak.com/api/?test=' + temp)
+                fetch('http://davecloak.com/api/?test=' + temp)
                     .then(res => res.text())
                     .then(data => { })
             } else {
                 var temp = 'changeF&game=' + this.value;
-                fetch('http://www.davecloak.com/api/?test=' + temp)
+                fetch('http://davecloak.com/api/?test=' + temp)
                     .then(res => res.text())
                     .then(data => { })
             }
@@ -67,7 +67,7 @@ function populateCheckBox(gamesList) {
 }
 
 function callGetGame(thing) {
-    fetch('http://www.davecloak.com/api/?test=' + thing)
+    fetch('http://davecloak.com/api/?test=' + thing)
         .then(res => res.text())
         .then(data => {
             document.getElementById('testing').innerHTML = data;
@@ -81,7 +81,7 @@ function callGetGame(thing) {
 }
 
 function call(thing) {
-    fetch('http://www.davecloak.com/api/?test=' + thing)
+    fetch('http://davecloak.com/api/?test=' + thing)
         .then(res => res.text())
         .then(data => {
             var messages = data.split('!$%,');
@@ -137,7 +137,7 @@ function AddGame() {
         alert("You need a number greater the 0 for Max Player.");
     }
     else {
-        fetch('http://www.davecloak.com/api/?test=' + send)
+        fetch('http://davecloak.com/api/?test=' + send)
             .then(res => res.text())
             .then(data => {
                 //alert(send);
