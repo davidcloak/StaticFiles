@@ -1,0 +1,9 @@
+{
+  "name": "Dragon Jams",
+  "short_name": "Dragon Jams",
+  "description": "Internet Radio Station.",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000"
+}
