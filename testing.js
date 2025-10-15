@@ -6,5 +6,5 @@
 
 var wPath = window.location.pathname;
 if(wPath == "/leaderboard"){
-        document.getElementById("HeHe").innerHTML = 💣
+        document.getElementById("HeHe").innerHTML = '💣';
 }
