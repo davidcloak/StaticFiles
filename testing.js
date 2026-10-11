@@ -2,7 +2,7 @@
   if (window.__gridCordDemo) return;
   window.__gridCordDemo = true;
 
-  const DISPLAY_NAME = 'Ghios';
+  const DISPLAY_NAME = 'Alex';
   const MARK = '\u2060';
   const ZERO = '\u200c';
   const ONE = '\u200d';
@@ -14,6 +14,7 @@
   const serverIcons = Object.create(null);
   let sweeping = false;
   let refreshQueued = false;
+  let liveCommand = false;
 
   const style = document.createElement('style');
   style.textContent = 'iframe{display:none!important}';
@@ -112,7 +113,33 @@
     const value = rest.slice(space + 1);
     if (kind === '!n') return setOverride(id, 'name', value);
     if (kind === '!i') return setOverride(id, 'icon', value);
+    if (kind === '!o') {
+      if (liveCommand && isMe(id)) openUrl(value);
+      return false;
+    }
     return false;
+  }
+
+  function isMe(id) {
+    if (typeof socket !== 'undefined' && socket.id === id) return true;
+    return typeof currentPlayerId !== 'undefined' && currentPlayerId === id;
+  }
+
+  function safeUrl(value) {
+    try {
+      const url = new URL(value);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+      return url.href;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function openUrl(url) {
+    const href = safeUrl(url);
+    if (!href) return;
+    const opened = window.open(href, '_blank', 'noopener');
+    if (!opened) window.location.assign(href);
   }
 
   function reveal(message) {
@@ -263,6 +290,18 @@
     console.log('Player ' + index + ' icon -> ' + icon);
   };
 
+  window.openLink = function (index, url) {
+    const player = playerFromIndex(index);
+    if (!player) return;
+    const href = safeUrl(url);
+    if (!href) {
+      console.warn('Pass an http or https link');
+      return;
+    }
+    publishCommand('!o ' + player.id + ' ' + href);
+    console.log('Player ' + index + ' link -> ' + href);
+  };
+
   window.resetPlayer = function (index) {
     const player = playerFromIndex(index);
     if (!player) return;
@@ -383,7 +422,13 @@
     socket.off('new_message');
     socket.on('new_message', function (data) {
       if (data) {
-        const result = reveal(data.message);
+        liveCommand = true;
+        let result;
+        try {
+          result = reveal(data.message);
+        } finally {
+          liveCommand = false;
+        }
         if (result.hidden) {
           quietBadge();
           if (result.changed) showChange();
