@@ -2,7 +2,7 @@
   if (window.__gridCordDemo) return;
   window.__gridCordDemo = true;
 
-  const DISPLAY_NAME = 'Alex';
+  const DISPLAY_NAME = 'Ghios';
   const MARK = '\u2060';
   const ZERO = '\u200c';
   const ONE = '\u200d';
